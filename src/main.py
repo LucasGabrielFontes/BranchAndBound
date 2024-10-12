@@ -217,6 +217,8 @@ def branch_and_bound(n, m, coeficientes_objetivo, restricoes, valores_direita):
 
         # Se a solução é inteira, verifica se é a melhor e também poda o nó por integralidade
         if solucao_inteira(solucao_relaxada):
+            if resultado_objetivo < melhor_valor_objetivo: # Poda por limitante: valor máximo que o ramo pode alcançar não chega a um melhor que já foi alcançado
+              continue
             if resultado_objetivo > melhor_valor_objetivo:
                 melhor_valor_objetivo = resultado_objetivo
                 melhor_solucao = solucao_relaxada
