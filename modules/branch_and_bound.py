@@ -1,69 +1,8 @@
-from mip import *
+# branch_and_bound.py
 
-# Classe que representa o formato geral de um nó da árvore do algoritmo Branch and Bound
-class No:
-    def __init__(self, variaveis_fixadas, resultado_objetivo=None, valores_variaveis=None):
-        """
-        variaveis_fixadas: Um dicionário que indica quais variáveis foram fixadas e seus valores (0 ou 1)
-        resultado_objetivo: Valor da função objetivo na solução relaxada
-        valores_variaveis: Valores encontrados para cada uma das variávies na relaxação linear - incluindo variáveis fracionárias
-        """
-        self.variaveis_fixadas = variaveis_fixadas  # Quais variáveis foram fixadas e seus valores
-        self.resultado_objetivo = resultado_objetivo  # Resultado da função objetivo da relaxação
-        self.valores_variaveis = valores_variaveis  # Solução fracionária da relaxação linear
-        self.esquerda = None  # Filho esquerdo (ramo x_j = 0)
-        self.direita = None  # Filho direito (ramo x_j = 1)
-
-# Função para ler o arquivo de entrada
-def le_arquivo(path):
-    """
-    Parâmetro:
-    path: string
-      Caminho do arquivo
-
-    Retorno:
-    n: quantidade de variáveis do problema
-
-    m: quantidade de restrições do problema
-
-    coeficientes_objetivo: coeficientes das variáveis na função objetivo
-
-    restricoes: lista de listas de coeficientes das variáveis em cada uma das restrições do problema
-
-    valores_direita: termos independentes de cada uma das restrições
-    """
-
-    try:
-        with open(path, 'r') as arquivo:
-            # Lê a primeira linha: quantidade de variáveis (n) e quantidade de restrições (m)
-            n, m = map(int, arquivo.readline().strip().split())
-
-            """
-              .strip(): retira espaços em branco no começo e no fim da linha, incluindo o caractere de nova linha '\n'
-              .split(): retorna uma lista de strings, geradas a partir da separação em torno de espaço em branco
-              map(): aplica uma determinada função, nesse caso int(), a todos os elementos de uma lista
-            """
-
-            # Lê a segunda linha: coeficientes das variáveis na função objetivo
-            coeficientes_objetivo = list(map(float, arquivo.readline().strip().split()))
-
-            # Lê as próximas linhas: coeficientes das variáveis em cada uma das restrições e os termos independentes em cada uma das restrições também
-            restricoes = []
-            valores_direita = []
-            for _ in range(m):
-                linha = list(map(float, arquivo.readline().strip().split()))
-                restricoes.append(linha[:-1])  # coeficientes das variáveis (lista de listas) - retira o último elemento da linha, que é o termo independente
-                valores_direita.append(linha[-1])  # valor à direita da desigualdade - só recebe o último elemento da linha
-
-        # Retorna os dados lidos
-        return n, m, coeficientes_objetivo, restricoes, valores_direita
-
-    except FileNotFoundError:
-        print(f"Erro: Arquivo '{path}' não encontrado.")
-        return None, None, None, None, None
-    except ValueError:
-        print(f"Erro ao processar o arquivo '{path}'. Verifique o formato.")
-        return None, None, None, None, None
+from mip import Model, xsum, CONTINUOUS, MAXIMIZE, CBC
+import matplotlib.pyplot as plt
+from arvore import No, desenha_arvore
 
 # Função que resolve uma relaxação linear com a biblioteca Python-Mip
 def resolve_relaxacao(n, m, variaveis_fixadas, coeficientes_objetivo, restricoes, valores_direita):
@@ -161,9 +100,9 @@ def solucao_inteira(solucao_relaxada):
     Retorno:
     bool: True se a solução for inteira, False caso contrário.
     """
-    for varriavel, valor in solucao_relaxada.items():
-        if valor != 0 and valor != 1: # Se alguma das variáveis for diferente de 0 e 1, já torna a solução não-inteira. Retorna False
-            return False
+    for variavel, valor in solucao_relaxada.items():
+      if valor != 0 and valor != 1: # Se alguma das variáveis for diferente de 0 e 1, já torna a solução não-inteira. Retorna False
+        return False
 
     return True # Após passar pelo for, significa que todas as variáveis são iguais a 0 ou 1. Ou seja, solução é inteira. Retorna True
 
@@ -210,19 +149,22 @@ def branch_and_bound(n, m, coeficientes_objetivo, restricoes, valores_direita):
 
         # Resolve a relaxação linear para o nó atual
         resultado_objetivo, solucao_relaxada = resolve_relaxacao(n, m, no_atual.variaveis_fixadas, coeficientes_objetivo, restricoes, valores_direita)
+        no_atual.resultado_objetivo = resultado_objetivo  # Armazena o valor da função objetivo no nó atual
 
         # Se o problema for inviável, poda o nó por inviabilidade
         if resultado_objetivo is None:
             continue
 
+        # Poda por limitante: se o valor objetivo não é melhor que o melhor já encontrado, descarta o nó
+        if resultado_objetivo <= melhor_valor_objetivo:
+            continue
+
         # Se a solução é inteira, verifica se é a melhor e também poda o nó por integralidade
         if solucao_inteira(solucao_relaxada):
-            if resultado_objetivo < melhor_valor_objetivo: # Poda por limitante: valor máximo que o ramo pode alcançar não chega a um melhor que já foi alcançado
-              continue
             if resultado_objetivo > melhor_valor_objetivo:
                 melhor_valor_objetivo = resultado_objetivo
                 melhor_solucao = solucao_relaxada
-                continue # O continue é indiferente aqui, mas é usado apenas para explicitar que o nó foi podado
+            continue
         else: # Caso não tenha sido podado, é necessário bifurcar o nó
             # Escolhe a variável fracionária mais próxima de 0.5
             variavel_fracionaria = escolhe_variavel_fracionaria(solucao_relaxada)
@@ -230,27 +172,19 @@ def branch_and_bound(n, m, coeficientes_objetivo, restricoes, valores_direita):
             # Bifurca em x_j = 0
             no_esquerdo = No(variaveis_fixadas=no_atual.variaveis_fixadas.copy())
             no_esquerdo.variaveis_fixadas.update({variavel_fracionaria: 0}) # Adiciona mais uma restrição ao filho de que a variável escolhida deve ser igual a 0
+            no_atual.esquerda = no_esquerdo # Define o nó esquerdo
             pilha.append(no_esquerdo)
 
             # Bifurca em x_j = 1
             no_direito = No(variaveis_fixadas=no_atual.variaveis_fixadas.copy())
             no_direito.variaveis_fixadas.update({variavel_fracionaria: 1})  # Adiciona mais uma restrição ao filho de que a variável escolhida deve ser igual a 1
+            no_atual.direita = no_direito # Define o nó direito
             pilha.append(no_direito)
 
+    # Desenha a árvore
+    plt.figure(figsize=(24, 14))
+    desenha_arvore((raiz, raiz.resultado_objetivo))
+    plt.axis('off')
+    plt.show()
+
     return melhor_valor_objetivo, melhor_solucao
-
-# Função main que lê o arquivo de entrada e chama a função do algoritmo Branch and Bound
-def main():
-    # Le os dados do arquivo
-    n, m, coeficientes_objetivo, restricoes, valores_direita = le_arquivo('./ArquivosTeste/teste1.txt')
-
-    # Recebe a melhor solução inteira dada pelo método Branch and Bound, caso exista
-    melhor_valor_objetivo, melhor_solucao = branch_and_bound(n, m, coeficientes_objetivo, restricoes, valores_direita)
-
-    if melhor_solucao == None:
-        print("O problema é inviável")
-    else:
-        print("Valor da função objetivo na solução ótima: ", melhor_valor_objetivo)
-
-if __name__ == "__main__":
-    main()
